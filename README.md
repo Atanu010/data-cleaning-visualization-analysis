@@ -1,66 +1,90 @@
-# Data Cleaning & Visualization Analysis
+# Retail Sales Performance Explorer
 
-## Project Overview
+A small, end-to-end sales analysis portfolio project: inspect imperfect order data, document cleaning decisions, compare performance with and without unusual transactions, and explore results in an interactive dashboard.
 
-This project focuses on cleaning raw data, handling missing values, removing duplicates, detecting outliers, and generating meaningful visual insights using Python.
+> **Dataset note:** The included orders are synthetic and deliberately constructed for demonstration. The findings below describe this sample only; they are not claims about a real retailer or market.
 
-The objective is to transform messy datasets into structured information that can support data-driven decision making.
+![Static overview of the cleaned-data analysis](images/dashboard.png)
 
-## Technologies Used
+## What the Analysis Shows
 
-- Python
-- Pandas
-- NumPy
-- Matplotlib
-- Seaborn
-- Jupyter Notebook
+The source file has **50 rows**. The reproducible pipeline removes one duplicate order ID and imputes two missing quantities, leaving **49 unique orders**. The IQR rule flags two high-sales transactions; they remain available for inspection rather than being silently discarded.
 
-## Data Cleaning Steps
+- The flagged orders total **$3,340**, or **43.8%** of cleaned sales. The largest is order `1049` at **$3,120**.
+- Excluding flagged orders for like-for-like comparisons, **East** has the highest regional sales at **$1,233** (28.8% of the inlier total).
+- **Widget C** leads inlier product sales at **$1,797** (42.0% of the inlier total).
 
-- Missing Value Treatment
-- Duplicate Record Removal
-- Data Type Conversion
-- Outlier Detection using IQR Method
-- Data Validation
+These are descriptive results on a small synthetic sample. The unusually high flagged share is a useful sensitivity example, not a business recommendation.
 
-## Visualizations
+## Run It
 
-- Missing Value Analysis
-- Sales Distribution
-- Regional Analysis
-- Correlation Heatmap
-- Outlier Detection Boxplots
-- Business Insights Dashboard
-
-## Key Skills Demonstrated
-
-- Data Cleaning
-- Exploratory Data Analysis
-- Data Visualization
-- Statistical Analysis
-- Business Intelligence
-
-## Project Outcome
-
-Successfully transformed raw data into meaningful business insights through preprocessing, analysis, and visualization techniques.
-
-## Quick Start
+Python 3.10 or later is recommended.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 python -m pip install -r requirements.txt
+python -m streamlit run app.py
+```
+
+The dashboard opens in your browser. Use the sidebar to filter dates, regions, and products. IQR-flagged orders are excluded from KPIs and comparative charts by default; switch them on to inspect sensitivity. The **Data quality** tab shows the cleaning audit, and **Order detail** supports CSV download.
+
+To regenerate static figures and the cleaned dataset:
+
+```bash
 python -m src.visualization
 ```
 
-The command reads `data/sales_data.csv`, writes `data/cleaned_sales_data.csv`, and saves plots to `images/`. Open `notebooks/data_cleaning_analysis.ipynb` for the interactive version. The sample data intentionally includes missing values, duplicate rows, inconsistent labels, and an unusually large order. Outliers are flagged for review, not silently removed.
+To run the tests:
 
-## Project Structure
+```bash
+python -m pytest -q
+```
+
+The notebook at [`notebooks/data_cleaning_analysis.ipynb`](notebooks/data_cleaning_analysis.ipynb) walks through the same workflow interactively.
+
+## Methodology
+
+1. Check required columns; normalize whitespace and region labels.
+2. Remove rows without order IDs, keep the first row for duplicate order IDs, and exclude unparseable dates before calculating imputations.
+3. Impute missing quantity and unit price with their medians; round imputed quantities to whole units. Fill missing category labels with the mode.
+4. Calculate `sales = quantity * unit_price`; flag values outside the 1.5-IQR fences and retain those orders.
+5. Compare regional, product, monthly, and order-value measures on the inlier population, while surfacing flagged-order impact separately.
+
+The app and cleaning module expose the same rules and audit counts. Review the assumptions before adapting this workflow to a different business or source system.
+
+## Repository Map
 
 ```text
-data/       Raw and generated cleaned sales data
-notebooks/  Interactive analysis
-src/        Reusable cleaning and visualization functions
-images/     Generated plots
-reports/    Analysis report
+app.py                         Streamlit dashboard
+src/data_cleaning.py           Cleaning, validation, and audit helpers
+src/analysis.py                KPI, aggregate, and insight functions
+src/visualization.py           Static figures and command-line pipeline
+data/sales_data.csv            Synthetic, intentionally imperfect input
+notebooks/data_cleaning_analysis.ipynb
+reports/project_report.md      Methods, findings, and limitations
+tests/test_analysis.py         Focused automated checks
+images/                        Generated static figures
 ```
+
+## Data Dictionary
+
+| Field | Meaning |
+| --- | --- |
+| `order_id` | Unique order key used for duplicate checks |
+| `order_date` | Order date, spanning January to June 2025 |
+| `region` | Sales region; includes one inconsistent label for cleanup |
+| `product` | Product category |
+| `quantity` | Units ordered; two values are missing in the raw file |
+| `unit_price` | Price per unit in sample dollars |
+| `sales` | Derived field: quantity multiplied by unit price |
+| `is_sales_outlier` | Boolean IQR review flag; not a deletion instruction |
+
+## Limitations and Next Steps
+
+- Synthetic, intentionally small data cannot establish customer behavior, seasonality, or statistical significance.
+- Keeping the first duplicate assumes `order_id` is a stable unique key; conflicting duplicates should be reconciled against source records.
+- Median imputation is transparent and reproducible, but changes the observed distribution. Production use should preserve an imputation indicator and confirm the rule with a data owner.
+- A statistical outlier may be a valid bulk order. Verify flagged transactions before reporting adjusted totals.
+
+For a real portfolio extension, replace the sample with a properly licensed public dataset, add source provenance, and compare this descriptive analysis with validated business definitions.

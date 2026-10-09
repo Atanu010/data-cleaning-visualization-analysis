@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from src.analysis import monthly_performance, regional_performance
 from src.data_cleaning import clean_sales_data
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,7 @@ IMAGE_DIR = ROOT / "images"
 
 
 def _save(fig: plt.Figure, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(fig)
@@ -38,46 +40,68 @@ def plot_missing_values(raw: pd.DataFrame, output_dir: Path = IMAGE_DIR) -> Path
 
 def plot_outliers(data: pd.DataFrame, output_dir: Path = IMAGE_DIR) -> Path:
     fig, ax = plt.subplots(figsize=(7, 4))
-    sns.boxplot(data=data, x="sales", y="region", color="#e7a44a", ax=ax)
-    ax.set(title="Sales by Region: IQR Outlier Review", xlabel="Sales", ylabel="Region")
+    baseline = data.loc[~data["is_sales_outlier"]]
+    regions = sorted(data["region"].dropna().unique())
+    sns.boxplot(data=baseline, x="sales", y="region", order=regions, showfliers=False, color="#83b6a5", ax=ax)
+    positions = {region: index for index, region in enumerate(regions)}
+    flagged = data.loc[data["is_sales_outlier"]]
+    if not flagged.empty:
+        ax.scatter(
+            flagged["sales"],
+            flagged["region"].map(positions),
+            marker="D",
+            color="#c75b45",
+            label="IQR-flagged order",
+            zorder=5,
+        )
+        ax.legend(frameon=False)
+    ax.set_xscale("log")
+    ax.set(title="Typical Order Values and Flagged Transactions", xlabel="Sales (log scale)", ylabel="Region")
     path = output_dir / "outliers.png"
     _save(fig, path)
     return path
 
 
 def plot_correlation_heatmap(data: pd.DataFrame, output_dir: Path = IMAGE_DIR) -> Path:
-    numeric = data.select_dtypes(include="number")
+    numeric = data[["quantity", "unit_price", "sales"]]
     fig, ax = plt.subplots(figsize=(6, 4))
     sns.heatmap(numeric.corr(), annot=True, cmap="YlGnBu", fmt=".2f", ax=ax)
-    ax.set_title("Numeric Feature Correlations")
+    ax.set_title("Order Metrics Correlation")
     path = output_dir / "heatmap.png"
     _save(fig, path)
     return path
 
 
 def plot_sales_distribution(data: pd.DataFrame, output_dir: Path = IMAGE_DIR) -> Path:
+    baseline = data.loc[~data["is_sales_outlier"]]
     fig, ax = plt.subplots(figsize=(7, 4))
-    sns.histplot(data=data, x="sales", hue="region", bins=15, element="step", ax=ax)
-    ax.set(title="Order Sales Distribution", xlabel="Sales", ylabel="Order count")
+    sns.histplot(data=baseline, x="sales", hue="region", bins=12, element="step", ax=ax)
+    ax.set(
+        title=f"Order Sales Distribution (inlier orders; {int(data['is_sales_outlier'].sum())} flagged separately)",
+        xlabel="Sales",
+        ylabel="Order count",
+    )
     path = output_dir / "sales_distribution.png"
     _save(fig, path)
     return path
 
 
 def plot_dashboard(data: pd.DataFrame, output_dir: Path = IMAGE_DIR) -> Path:
+    baseline = data.loc[~data["is_sales_outlier"]]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    region_sales = data.groupby("region", observed=True)["sales"].sum().sort_values()
+    region_sales = regional_performance(baseline)["sales"].sort_values()
     axes[0, 0].barh(region_sales.index, region_sales.values, color="#3a7d78")
     axes[0, 0].set(title="Sales by Region", xlabel="Sales")
-    sns.histplot(data=data, x="sales", bins=15, color="#e7a44a", ax=axes[0, 1])
-    axes[0, 1].set(title="Order Value Distribution", xlabel="Sales")
-    product_sales = data.groupby("product", observed=True)["sales"].sum().sort_values()
+    sns.histplot(data=baseline, x="sales", bins=12, color="#e7a44a", ax=axes[0, 1])
+    axes[0, 1].set(title="Order Value Distribution (IQR inliers)", xlabel="Sales")
+    product_sales = baseline.groupby("product", observed=True)["sales"].sum().sort_values()
     axes[1, 0].bar(product_sales.index, product_sales.values, color="#507aa5")
     axes[1, 0].set(title="Sales by Product", ylabel="Sales")
-    monthly = data.set_index("order_date").resample("MS")["sales"].sum()
-    axes[1, 1].plot(monthly.index, monthly.values, marker="o", color="#bf5b45")
-    axes[1, 1].set(title="Monthly Sales", ylabel="Sales")
+    monthly = monthly_performance(baseline)
+    axes[1, 1].plot(monthly["month"], monthly["sales"], marker="o", color="#bf5b45")
+    axes[1, 1].set(title="Monthly Sales (IQR inliers)", ylabel="Sales")
     axes[1, 1].tick_params(axis="x", rotation=30)
+    fig.suptitle("Sales Overview | IQR-Flagged Orders Excluded from Comparisons", y=1.02)
     path = output_dir / "dashboard.png"
     _save(fig, path)
     return path
